@@ -1,0 +1,34 @@
+{
+  "name": "soup-experiment-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:local": "tsx scripts/with-local-pg.ts npx vitest run",
+    "dev:local": "tsx scripts/with-local-pg.ts npx tsx src/server.ts",
+    "simulate": "tsx scripts/simulate.ts",
+    "demo:local": "tsx scripts/simulate.ts http://localhost:8090",
+    "loadtest": "tsx scripts/loadtest.ts",
+    "loadtest:local": "tsx scripts/with-local-pg.ts npx tsx scripts/loadtest.ts"
+  },
+  "dependencies": {
+    "@fastify/static": "^8.0.0",
+    "fastify": "^5.0.0",
+    "pg": "^8.13.0",
+    "tsx": "^4.19.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "embedded-postgres": "^17.2.0-beta.15",
+    "playwright": "^1.49.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
