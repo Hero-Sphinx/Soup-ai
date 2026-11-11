@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  app-checks:
+    name: App checks
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: soup
+          POSTGRES_PASSWORD: soup
+          POSTGRES_DB: soup
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U soup -d soup" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DATABASE_URL: postgres://soup:soup@localhost:5432/soup
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck
+      # schema.sql must be idempotent: the app applies it on every boot
+      - name: Apply schema twice
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+      - run: npm test
+
+  docker-compose:
+    name: docker compose up
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build --wait db app
+      - name: Smoke test the running stack
+        run: |
+          curl -fsS http://localhost:8080/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/runs)" = "401"
+          curl -fsS http://localhost:8080/ | grep -q "Soup"
+      - name: Test suite inside compose
+        run: docker compose run --rm tests
+      - if: always()
+        run: docker compose logs --no-color app | tail -50
