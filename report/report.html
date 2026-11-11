@@ -40,15 +40,12 @@
 <p class="sub">Full-Stack Engineer take-home · full report · November 2026<br />
 A mini experiment tracker: projects and API keys, metric ingestion over an unreliable network, a run list, and a run page that updates live.</p>
 
-<div class="box red">
-  <strong>Read this first: Docker.</strong> The machine this was built on has no Docker, so I never ran
-  <code>docker compose up</code> myself. It was checked on GitHub Actions instead: there the compose stack built,
-  started and passed the smoke test. The numbers in this report come from the same code on a Windows laptop with a
-  real local Postgres (<code>npm run test:local</code>).<br /><br />
-  <strong>The first CI run failed 2 of 42 tests,</strong> both of which passed on my laptop. One was a race in the
-  browser test: it read the page field by field while the last forced disconnect was still landing. The other, by my
-  diagnosis from the symptoms, was the slow-client test: its backlog was smaller than Linux socket buffers, so the
-  client never looked stuck. Both tests are changed; the latest run on the repository shows the current state.
+<div class="box">
+  <strong>Docker.</strong> My machine has no Docker, so I did not run <code>docker compose up</code> locally.
+  It runs on GitHub Actions (Linux): the compose stack builds, starts, passes a smoke test, and all 42 tests pass
+  inside it. The numbers in this report are from a Windows laptop with a real local Postgres
+  (<code>npm run test:local</code>). The first CI run failed 2 of 42 tests that had passed on Windows; both were
+  problems in the tests themselves (section 9) and pass since the fix.
 </div>
 
 <h3>Contents</h3>
@@ -73,8 +70,8 @@ A mini experiment tracker: projects and API keys, metric ingestion over an unrel
   <tr><td>Does a project see only its own data?</td><td>Yes, in the tests and by hand</td><td>19 automated tests; byte-identical 404 for another project's run and a non-existent run; checked by hand in two browser sessions.</td></tr>
   <tr><td>Silent failures</td><td>5 of 5 covered</td><td>Each failure named in the brief has its own test with measured numbers (section 6).</td></tr>
   <tr><td>50 runs × 10 events/s</td><td>SHIP, on conditions</td><td>Ingest p50 16 ms, p99 118 ms, 0 failed requests. Breaks at about 3× the request rate.</td></tr>
-  <tr><td>Automated tests</td><td>42 of 42 pass locally</td><td><code>test-output/test-run.txt</code>. <span class="bad">The first CI run on Linux failed 2 of them</span>; see the box above.</td></tr>
-  <tr><td>Docker</td><td>Works on CI, never run locally</td><td>Compose stack built, started and passed the smoke test on GitHub Actions. See the box above.</td></tr>
+  <tr><td>Automated tests</td><td>42 of 42 pass, locally and on CI</td><td><code>test-output/test-run.txt</code>. The first CI run on Linux failed 2 of them; both were test problems, now fixed.</td></tr>
+  <tr><td>Docker</td><td>Works on CI, never run locally</td><td>On GitHub Actions the compose stack builds, starts, passes the smoke test, and all 42 tests pass inside it.</td></tr>
   <tr><td>Found by hand, missed by tests</td><td class="bad">1 data loss, 2 display bugs</td><td>The demo client drops data while the server is down and the chart hides the hole (section 8).</td></tr>
 </table>
 
@@ -229,7 +226,7 @@ page: rows=6000 last_seq=6000 fingerprint=fb457e40 gaps=0</pre>
 
 <h2>10. What surprised me, what still concerns me</h2>
 <p>What surprised me was how fast the system is and how strict key rotation is. Points show up on the page almost as soon as they are sent. When I rotated the key in one tab, the other tab was signed out within seconds and the demo client started failing straight away. There is no grace period at all.</p>
-<p>What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away and the chart drew a straight line over the hole, so a user would never know points were missing. I found two display bugs just by looking, which 42 automated tests had not caught, so there are probably more. And I have only seen Docker work on CI, never on my own machine, and CI failed two tests that my laptop passed.</p>
+<p>What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away and the chart drew a straight line over the hole, so a user would never know points were missing. I found two display bugs just by looking, which 42 automated tests had not caught, so there are probably more. And I have only seen Docker work on CI, never on my own machine, and the first CI run failed two tests that my laptop passed.</p>
 
 <h2>11. Known weak points and what the tests do not catch</h2>
 <h3>Weak points in the design</h3>

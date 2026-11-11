@@ -1,8 +1,6 @@
 # Note
 
-**Read this first: Docker.** The machine this was built on has no Docker, so I never ran `docker compose up` myself. It was checked on GitHub Actions instead: there the compose stack built, started and passed the smoke test. The numbers below come from the same code on a Windows laptop with a real local Postgres (`npm run test:local`).
-
-**The first CI run failed 2 of 42 tests,** both of which passed on my laptop. One was a race in the browser test: it read the page field by field while the last forced disconnect was still landing. The other, by my diagnosis from the symptoms, was the slow-client test: its backlog was smaller than Linux socket buffers, so the client never looked stuck. Both tests are changed; the latest run on the repository shows the current state.
+**Docker.** My machine has no Docker, so I did not run `docker compose up` locally. It runs on GitHub Actions (Linux): the compose stack builds, starts, passes a smoke test, and all 42 tests pass inside it. The numbers below are from a Windows laptop with a real local Postgres (`npm run test:local`). The first CI run failed 2 of 42 tests that had passed on Windows; both were problems in the tests themselves (section 5) and pass since the fix.
 
 Design: [DESIGN.md](DESIGN.md). Full tables and every number: [EVIDENCE.md](EVIDENCE.md). Raw output and screenshots: [test-output/](test-output/).
 
@@ -68,7 +66,7 @@ The code, tests and first drafts of these documents were written with Claude Cod
 - **A leak:** dropped streams were never released. Exposed by one odd number in a passing test ("killed 478 connections" for about 90 connects).
 - **A load test that measured itself:** first result 1.7 s, because the load generator shared the server's process. Separated: 16 ms.
 - **A test that could not fail correctly:** the "slow client" was quietly reading the data.
-- **Two tests that failed only on Linux CI** although all 42 passed on Windows (see the top of this note).
+- **Two tests that failed only on Linux CI** although all 42 passed on Windows (a read race in the browser test, and a slow-client backlog smaller than Linux socket buffers).
 - Smaller: too little chaos in the browser test, a growing reconnect delay, chart thinning that could hide a spike.
 
 **What I verified by hand** (seven checks, screenshots in [test-output/manual-checks.md](test-output/manual-checks.md)):
@@ -82,4 +80,4 @@ The code, tests and first drafts of these documents were written with Claude Cod
 
 What surprised me was how fast the system is and how strict key rotation is. Points show up on the page almost as soon as they are sent. When I rotated the key in one tab, the other tab was signed out within seconds and the demo client started failing straight away. There is no grace period at all.
 
-What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away and the chart drew a straight line over the hole, so a user would never know points were missing. I found two display bugs just by looking, which 42 automated tests had not caught, so there are probably more. And I have only seen Docker work on CI, never on my own machine, and CI failed two tests that my laptop passed.
+What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away and the chart drew a straight line over the hole, so a user would never know points were missing. I found two display bugs just by looking, which 42 automated tests had not caught, so there are probably more. And I have only seen Docker work on CI, never on my own machine, and the first CI run failed two tests that my laptop passed.

@@ -1,8 +1,6 @@
 # Evidence (long version of NOTE.md)
 
-**Read this first: Docker.** The machine this was built on has no Docker, so I never ran `docker compose up` myself. It was checked on GitHub Actions instead: there the compose stack built, started and passed the smoke test. The numbers below come from the same code on a Windows laptop with a real local Postgres (`npm run test:local`).
-
-**The first CI run failed 2 of 42 tests,** both of which passed on my laptop. One was a race in the browser test: it read the page field by field while the last forced disconnect was still landing. The other, by my diagnosis from the symptoms, was the slow-client test: its backlog was smaller than Linux socket buffers, so the client never looked stuck. Both tests are changed; the latest run on the repository shows the current state.
+**Docker.** My machine has no Docker, so I did not run `docker compose up` locally. It runs on GitHub Actions (Linux): the compose stack builds, starts, passes a smoke test, and all 42 tests pass inside it. The numbers below are from a Windows laptop with a real local Postgres (`npm run test:local`). The first CI run failed 2 of 42 tests that had passed on Windows; both were problems in the tests themselves (section 5) and pass since the fix.
 
 Raw output: [test-output/](test-output/). Counts and timings quoted below are from the saved run and vary a little from run to run. Design: [DESIGN.md](DESIGN.md).
 
@@ -91,4 +89,4 @@ The code, tests and first drafts of these documents were written with Claude Cod
 
 What surprised me was how fast the system is and how strict key rotation is. Points show up on the page almost as soon as they are sent. When I rotated the key in one tab, the other tab was signed out within seconds and the demo client started failing straight away. There is no grace period at all.
 
-What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away, and the chart drew a straight line over the hole, so a user would never know points were missing. I found two small display bugs just by looking at the pages, which the 42 automated tests had not caught, so there are probably more. And I have only seen Docker work on CI, never on my own machine, and CI failed two tests that my laptop passed.
+What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away, and the chart drew a straight line over the hole, so a user would never know points were missing. I found two small display bugs just by looking at the pages, which the 42 automated tests had not caught, so there are probably more. And I have only seen Docker work on CI, never on my own machine, and the first CI run failed two tests that my laptop passed.
