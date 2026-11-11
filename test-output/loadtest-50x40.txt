@@ -1,0 +1,12 @@
+
+> soup-experiment-tracker@1.0.0 loadtest:local
+> tsx scripts/with-local-pg.ts npx tsx scripts/loadtest.ts
+
+load: 50 runs x 40 events/s = 2000 events/s for 20s, 50 live viewers, client flush every 200 ms
+sent:            39512 events in 4939 requests over 20.2s = 1956 events/s achieved
+ingest latency:  p50 13.8  p95 77.1  p99 104.4  max 185.1 ms
+end-to-end:      p50 15.5  p95 93.0  p99 119.1  max 186.3 ms   (client sends point -> viewer receives it)
+failed requests: 0
+viewers:         50/50 identical to database and to what was sent; seq gaps seen: 0
+server process:  cpu 54% of one core, rss 93 -> 114 MB, event-loop delay p50 11.8 / p99 23.9 / max 308.3 ms
+db pool at end of load: {"total":20,"idle":20,"waiting":0}; streams: {"open":50,"opened":50,"closedStalled":0,"closedRevoked":0,"maxBufferedBytes":0}

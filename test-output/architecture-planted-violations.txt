@@ -1,0 +1,15 @@
+ × tests/architecture/rules.test.ts > every route is authenticated on purpose > routes are only registered through projectRoute / adminRoute / publicRoute
+   → Register routes with projectRoute/adminRoute/publicRoute from src/http.ts, never app.get/app.route directly.: expected [ 'src/zz_planted.ts:3' ] to deeply equal []
+ ✓ tests/architecture/rules.test.ts > every route is authenticated on purpose > the set of public routes is exactly the reviewed allowlist
+ × tests/architecture/rules.test.ts > every route is authenticated on purpose > request bodies and query strings are only read through parseWith (zod)
+   → Validate input with parseWith(schema, req.body). Raw req.body / req.query is not allowed.: expected [ 'src/zz_planted.ts:4' ] to deeply equal []
+ × tests/architecture/rules.test.ts > dangerous patterns > SQL is never built by string interpolation or concatenation
+   → Use $1-style parameters. Never put values into SQL text.: expected [ 'src/zz_planted.ts' ] to deeply equal []
+ × tests/architecture/rules.test.ts > dangerous patterns > the browser code never turns strings into HTML or code
+   → Run names and metric keys are attacker-controlled. Use textContent / createElement.: expected [ 'public/zz_planted.js:1' ] to deeply equal []
+ × tests/architecture/rules.test.ts > dangerous patterns > the server never logs raw requests
+   → Log the route pattern and ids only. Headers and URLs can carry API keys.: expected [ 'src/zz_planted.ts:6' ] to deeply equal []
+ × tests/architecture/rules.test.ts > secrets > no secret-looking value or .env file is in the tree
+   → Move the secret to an environment variable and rotate it.: expected [ …(2) ] to deeply equal []
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+      Tests  6 failed | 1 passed (7)

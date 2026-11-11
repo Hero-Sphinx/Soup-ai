@@ -1,0 +1,89 @@
+
+> soup-experiment-tracker@1.0.0 test:local
+> tsx scripts/with-local-pg.ts npx vitest run
+
+
+ RUN  v2.1.9 c:/Soup
+
+ ✓ tests/silent-failures.test.ts > events lost on reconnect > a client that was offline resumes at its cursor: gets exactly the missed points, none twice
+ ✓ tests/silent-failures.test.ts > events lost on reconnect > a connection cut in the middle of a frame loses nothing (client asks again from its applied cursor)
+ ✓ tests/silent-failures.test.ts > events lost on reconnect > the client-side tripwire: a skipped seq is detected, counted, and not applied
+stdout | tests/silent-failures.test.ts > events lost on reconnect > a missed NOTIFY does not lose or stall data: streams fall back to re-reading the log
+delivery with LISTEN connection dead: 264 ms (poll interval 300 ms); after it healed: 63 ms
+
+ ✓ tests/silent-failures.test.ts > events lost on reconnect > a missed NOTIFY does not lose or stall data: streams fall back to re-reading the log 1161ms
+ ✓ tests/silent-failures.test.ts > events lost on reconnect > a client whose cursor is ahead of the log is told to reset instead of silently showing stale data
+ ✓ tests/silent-failures.test.ts > duplicates > the same batch sent 12 times (8 of them concurrently) is stored exactly once
+ ✓ tests/silent-failures.test.ts > duplicates > a point repeated inside one batch is stored once
+ ✓ tests/silent-failures.test.ts > duplicates > a re-send with a DIFFERENT value is not silently dropped or overwritten: first write wins and the conflict is reported and recorded
+ ✓ tests/silent-failures.test.ts > duplicates > 20 concurrent writers into one run: seq is exactly 1..N with no holes and no repeats
+stdout | tests/silent-failures.test.ts > queue overflow for a slow client > a client that stops reading costs the server one page of memory, is cut off, and can resume without loss
+slow client: server stopped reading the log at seq 5500 of 60000 (reason: stalled); largest per-stream write buffer ever seen: 26541 bytes
+
+ ✓ tests/silent-failures.test.ts > queue overflow for a slow client > a client that stops reading costs the server one page of memory, is cut off, and can resume without loss 2656ms
+ ✓ tests/silent-failures.test.ts > partial writes > one invalid event rejects the whole batch: nothing from it is stored
+ ✓ tests/silent-failures.test.ts > partial writes > a crash between INSERT and COMMIT leaves no rows, no seq movement and no live event; the retry then succeeds completely 778ms
+stdout | tests/silent-failures.test.ts > old API key after rotation > stops working on the next request, on every endpoint, and its open stream is closed
+open stream on the old key was closed 8 ms after rotation
+
+ ✓ tests/silent-failures.test.ts > old API key after rotation > stops working on the next request, on every endpoint, and its open stream is closed 590ms
+stdout | tests/silent-failures.test.ts > old API key after rotation > even if the revocation notice is lost, an open stream dies at its next periodic key check
+without NOTIFY, the stream was closed after 303 ms (key re-check every 300 ms in this test, 3 s by default)
+
+ ✓ tests/silent-failures.test.ts > old API key after rotation > even if the revocation notice is lost, an open stream dies at its next periodic key check 337ms
+ ✓ tests/isolation.test.ts > read > A gets the same 404 for B's run as for a run that does not exist
+ ✓ tests/isolation.test.ts > read > A's run list contains only A's runs
+ ✓ tests/isolation.test.ts > read > B can read its own run (the 404s above are not just a broken endpoint)
+ ✓ tests/isolation.test.ts > write > A cannot write metrics into B's run, and nothing in B changes
+ ✓ tests/isolation.test.ts > write > the project in a request comes from the key only: a project_id in the body is rejected
+ ✓ tests/isolation.test.ts > write > A cannot rotate B's key, and rotating A's key leaves B's key working
+ ✓ tests/isolation.test.ts > live stream > A cannot subscribe to B's run: it gets a JSON 404, not an event stream
+ ✓ tests/isolation.test.ts > live stream > while B ingests, A's open stream receives only A's points 793ms
+ ✓ tests/isolation.test.ts > live stream > a cursor cannot be used to reach outside the run
+ ✓ tests/isolation.test.ts > guessing IDs > IDs are random UUIDv4 (not sequential), and malformed IDs never reach the database
+ ✓ tests/isolation.test.ts > cache > every API response forbids caching, so no proxy/browser cache can serve A's data to B
+ ✓ tests/isolation.test.ts > cache > the same URL with two different keys returns each project's own data
+ ✓ tests/isolation.test.ts > authentication > rejects missing, malformed, wrong-place and other-scope credentials
+ ✓ tests/isolation.test.ts > authentication > a project key cannot create projects
+ ✓ tests/isolation.test.ts > error messages > client errors are fixed strings; they describe the caller's input and nothing else
+ ✓ tests/isolation.test.ts > error messages > an unexpected server error returns a generic 500; the detail goes to the server log only
+ ✓ tests/isolation.test.ts > logs > no API key, admin token or Authorization header is ever written to the logs
+ ✓ tests/isolation.test.ts > logs > KNOWN LEAK, documented not fixed: the 500 log line carries the raw driver error text
+stdout | tests/isolation.test.ts > timing (measurement, not an assertion) > prints latency of '404: other project's run' vs '404: no such run'
+timing over 300 interleaved samples each: other-project 404 median 0.926 ms, nonexistent 404 median 0.915 ms, difference 0.011 ms
+(both paths run the same single indexed query "WHERE id = $1 AND project_id = $2"; this is a local measurement and cannot rule out a difference an attacker could average out)
+
+ ✓ tests/isolation.test.ts > timing (measurement, not an assertion) > prints latency of '404: other project's run' vs '404: no such run' 597ms
+stdout | tests/ui.e2e.test.ts > UI: page state == database after out-of-order, duplicated, late metrics and a connection that drops and recovers
+seed=20261112
+browser stream connections closed so far: 27, resumed from seq: 0,0,232,384,497,788,873,1991,2356,2556,2650,2731,3064,3443,3702,4076,4235,4534,4678,4854,5000,5193,5519,5665,5849,5955,6000
+sent: 6000 unique events, 371 HTTP requests; chaos: 15 lost requests, 33 lost responses, 27 aborted, 24 stale re-sends, 306 late
+server killed 27 live connections; browser offline 1.5 s at seq 788 (status shown while offline: "reconnecting")
+db:   rows=6000 last_seq=6000 fingerprint=fb457e40
+page: rows=6000 last_seq=6000 fingerprint=fb457e40 gaps=0
+cards: [{"key":"lr","value":"966.459308","meta":"step 1999 · 2,000 points","drawnPoints":2000},{"key":"train/loss","value":"714.434478","meta":"step 1999 · 2,000 points","drawnPoints":2000},{"key":"val/acc","value":"359.311664","meta":"step 1999 · 2,000 points","drawnPoints":2000}]
+
+ ✓ tests/ui.e2e.test.ts > UI: page state == database after out-of-order, duplicated, late metrics and a connection that drops and recovers 10214ms
+ ✓ tests/architecture/rules.test.ts > every route is authenticated on purpose > routes are only registered through projectRoute / adminRoute / publicRoute
+ ✓ tests/architecture/rules.test.ts > every route is authenticated on purpose > the set of public routes is exactly the reviewed allowlist
+ ✓ tests/architecture/rules.test.ts > every route is authenticated on purpose > request bodies and query strings are only read through parseWith (zod)
+ ✓ tests/architecture/rules.test.ts > dangerous patterns > SQL is never built by string interpolation or concatenation
+ ✓ tests/architecture/rules.test.ts > dangerous patterns > the browser code never turns strings into HTML or code
+ ✓ tests/architecture/rules.test.ts > dangerous patterns > the server never logs raw requests
+ ✓ tests/architecture/rules.test.ts > secrets > no secret-looking value or .env file is in the tree
+stdout | tests/consistency.test.ts > API: chaotic ingest + repeated stream drops => stream state == database == what was sent
+seed=20261111
+sent: 6000 unique events in 297 batches, 392 HTTP requests
+chaos: 25 lost requests, 34 lost responses, 28 aborted mid-flight, 33 stale re-sends, 298 late events
+server acks: accepted=5116 duplicates=1334 conflicts=0
+stream: killed 68 connections; early consumer connected 38x, late joiner 32x
+stream replays ignored: early=0 late=0; gaps: early=0 late=0
+db: rows=6000 last_seq=6000 seq range=1..6000
+
+ ✓ tests/consistency.test.ts > API: chaotic ingest + repeated stream drops => stream state == database == what was sent 2653ms
+
+ Test Files  5 passed (5)
+      Tests  42 passed (42)
+   Start at  17:15:15
+   Duration  30.10s (transform 179ms, setup 0ms, collect 2.04s, tests 27.01s, environment 1ms, prepare 418ms)
+
