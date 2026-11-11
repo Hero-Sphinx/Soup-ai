@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Run · Soup tracker</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <a class="brand" href="/">Soup <span>tracker</span></a>
+      <a class="ghost" href="/">← All runs</a>
+    </header>
+
+    <main>
+      <div class="row">
+        <h1 id="run-name">Run</h1>
+        <span id="status" class="pill" data-testid="status" data-status="connecting" role="status">Connecting…</span>
+      </div>
+      <p id="status-detail" class="muted"></p>
+
+      <dl class="facts">
+        <div><dt>Points</dt><dd id="count" data-testid="count">0</dd></div>
+        <div><dt>Last event #</dt><dd id="last-seq" data-testid="last-seq">0</dd></div>
+        <div><dt>Fingerprint</dt><dd id="digest" data-testid="digest">–</dd></div>
+        <div><dt>Gaps detected</dt><dd id="gaps" data-testid="gaps">0</dd></div>
+      </dl>
+
+      <section id="charts" class="charts"></section>
+      <p id="empty" class="muted">No metrics yet. Points appear here as they arrive.</p>
+    </main>
+    <script type="module" src="/run.js"></script>
+  </body>
+</html>

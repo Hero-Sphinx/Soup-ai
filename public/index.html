@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Runs · Soup tracker</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <a class="brand" href="/">Soup <span>tracker</span></a>
+      <div id="who" class="who" hidden>
+        <span id="project-name"></span>
+        <button id="rotate" class="ghost" type="button">Rotate key</button>
+        <button id="signout" class="ghost" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="signin" class="card" hidden>
+        <h1>Open a project</h1>
+        <p class="muted">Paste the project's API key. It stays in this browser tab only.</p>
+        <form id="signin-form">
+          <label for="key">API key</label>
+          <input id="key" name="key" type="password" autocomplete="off" placeholder="sk_…" required />
+          <button type="submit">Open project</button>
+          <p id="signin-error" class="error" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="runs-view" hidden>
+        <p id="new-key" class="notice" hidden></p>
+        <div class="row">
+          <h1>Runs</h1>
+          <form id="new-run" class="inline">
+            <label class="sr" for="run-name">New run name</label>
+            <input id="run-name" name="name" maxlength="100" placeholder="New run name" required />
+            <button type="submit">Create</button>
+          </form>
+        </div>
+        <p id="runs-error" class="error" role="alert"></p>
+        <ul id="runs" class="runs"></ul>
+        <p id="runs-empty" class="muted" hidden>No runs yet. Create one, or run <code>npm run simulate</code>.</p>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
