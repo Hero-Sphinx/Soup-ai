@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Soup tracker: Full-Stack take-home report</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 18mm; }
+  * { box-sizing: border-box; }
+  body { font: 10.5pt/1.5 "Segoe UI", system-ui, Arial, sans-serif; color: #1d2a24; margin: 0; }
+  h1 { font-size: 22pt; margin: 0 0 2mm; color: #0a5c40; }
+  h2 { font-size: 14pt; color: #0a5c40; border-bottom: 2px solid #c9971c; padding-bottom: 1.5mm; margin: 9mm 0 3mm; break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 5mm 0 1.5mm; break-after: avoid; }
+  p { margin: 0 0 2.5mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 5.5mm; }
+  li { margin-bottom: 1mm; }
+  code { font: 9pt Consolas, monospace; background: #ece8da; padding: 0 3px; border-radius: 3px; }
+  pre { font: 8.5pt/1.4 Consolas, monospace; background: #f4f1e6; border: 1px solid #e3dfd2; border-radius: 4px; padding: 3mm; white-space: pre-wrap; break-inside: avoid; margin: 0 0 3mm; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 4mm; font-size: 9.5pt; break-inside: avoid; }
+  th, td { border: 1px solid #d9d4c3; padding: 1.6mm 2mm; text-align: left; vertical-align: top; }
+  th { background: #0f7a55; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #faf8f1; }
+  .sub { color: #5f6f67; margin-bottom: 5mm; }
+  .box { border: 1px solid #c9971c; background: #fff7dc; border-radius: 5px; padding: 3mm 4mm; margin: 0 0 4mm; break-inside: avoid; }
+  .box.red { border-color: #a12a2a; background: #fbeaea; }
+  .box.green { border-color: #0f7a55; background: #e6f5ee; }
+  figure { margin: 3mm 0 5mm; break-inside: avoid; }
+  figure img { width: 100%; border: 1px solid #cfcab9; border-radius: 4px; display: block; }
+  figcaption { font-size: 9pt; color: #44524b; margin-top: 1.5mm; }
+  .pair { display: flex; gap: 6mm; align-items: flex-start; break-inside: avoid; }
+  .pair figure { flex: 1; }
+  .pair img { max-height: 105mm; width: auto; max-width: 100%; margin: 0 auto; }
+  .bad { color: #a12a2a; font-weight: 700; }
+  .toc li { margin-bottom: 0.5mm; }
+  .pagebreak { break-before: page; }
+</style>
+</head>
+<body>
+
+<h1>Soup tracker</h1>
+<p class="sub">Full-Stack Engineer take-home · full report · November 2026<br />
+A mini experiment tracker: projects and API keys, metric ingestion over an unreliable network, a run list, and a run page that updates live.</p>
+
+<div class="box red">
+  <strong>Read this first: Docker.</strong> The machine this was built on has no Docker, so I never ran
+  <code>docker compose up</code> myself. It was checked on GitHub Actions instead: there the compose stack built,
+  started and passed the smoke test. The numbers in this report come from the same code on a Windows laptop with a
+  real local Postgres (<code>npm run test:local</code>).<br /><br />
+  <strong>The first CI run failed 2 of 42 tests,</strong> both of which passed on my laptop. One was a race in the
+  browser test: it read the page field by field while the last forced disconnect was still landing. The other, by my
+  diagnosis from the symptoms, was the slow-client test: its backlog was smaller than Linux socket buffers, so the
+  client never looked stuck. Both tests are changed; the latest run on the repository shows the current state.
+</div>
+
+<h3>Contents</h3>
+<ol class="toc">
+  <li>Summary of results</li>
+  <li>What was built</li>
+  <li>Design in brief</li>
+  <li>Consistency: does the page match the database?</li>
+  <li>Isolation: does a project see only its own data?</li>
+  <li>Silent failures</li>
+  <li>Verdict for 50 runs at 10 events per second</li>
+  <li>What I checked by hand (with screenshots)</li>
+  <li>AI tools: how I used them and where they were wrong</li>
+  <li>What surprised me, what still concerns me</li>
+  <li>Known weak points and what the tests do not catch</li>
+</ol>
+
+<h2>1. Summary of results</h2>
+<table>
+  <tr><th style="width:27%">Question</th><th style="width:15%">Answer</th><th>Evidence</th></tr>
+  <tr><td>Does the page match what is stored?</td><td>Yes, in the tests</td><td>Real browser, 6000 points through a faulty client, 23 forced disconnects, 1.5 s offline: page data, on-screen numbers and fingerprint equal a direct database query.</td></tr>
+  <tr><td>Does a project see only its own data?</td><td>Yes, in the tests and by hand</td><td>19 automated tests; byte-identical 404 for another project's run and a non-existent run; checked by hand in two browser sessions.</td></tr>
+  <tr><td>Silent failures</td><td>5 of 5 covered</td><td>Each failure named in the brief has its own test with measured numbers (section 6).</td></tr>
+  <tr><td>50 runs × 10 events/s</td><td>SHIP, on conditions</td><td>Ingest p50 16 ms, p99 118 ms, 0 failed requests. Breaks at about 3× the request rate.</td></tr>
+  <tr><td>Automated tests</td><td>42 of 42 pass locally</td><td><code>test-output/test-run.txt</code>. <span class="bad">The first CI run on Linux failed 2 of them</span>; see the box above.</td></tr>
+  <tr><td>Docker</td><td>Works on CI, never run locally</td><td>Compose stack built, started and passed the smoke test on GitHub Actions. See the box above.</td></tr>
+  <tr><td>Found by hand, missed by tests</td><td class="bad">1 data loss, 2 display bugs</td><td>The demo client drops data while the server is down and the chart hides the hole (section 8).</td></tr>
+</table>
+
+<h2>2. What was built</h2>
+<ul>
+  <li><strong>Server:</strong> TypeScript on Node 22, Fastify, PostgreSQL. Live updates over Server-Sent Events (SSE).</li>
+  <li><strong>Web pages:</strong> a run list and a live run page, plain HTML and JavaScript with no build step.</li>
+  <li><strong>Tests:</strong> 42 tests in five files: consistency (API and real browser), isolation, silent failures, architecture rules.</li>
+  <li><strong>Scripts:</strong> a deliberately unreliable client (used by tests, demo and load test), a demo simulator, a load test.</li>
+</ul>
+<table>
+  <tr><th style="width:16%">Method</th><th style="width:36%">Path</th><th>Purpose</th></tr>
+  <tr><td>POST</td><td><code>/admin/projects</code></td><td>Admin token. Creates a project and returns its API key once.</td></tr>
+  <tr><td>POST</td><td><code>/keys/rotate</code></td><td>New key; every other key of the project stops working immediately.</td></tr>
+  <tr><td>GET, POST</td><td><code>/runs</code></td><td>List and create runs.</td></tr>
+  <tr><td>POST</td><td><code>/runs/{id}/metrics</code></td><td>Ingest a batch. Safe to send again.</td></tr>
+  <tr><td>GET</td><td><code>/runs/{id}/metrics</code></td><td>Read a run's log in pages.</td></tr>
+  <tr><td>GET</td><td><code>/runs/{id}/stream</code></td><td>Live stream (SSE); resume with <code>Last-Event-ID</code>.</td></tr>
+</table>
+<p>Run it: <code>docker compose up</code>, then open <code>http://localhost:8080</code> and paste the key printed by the <code>demo</code> service.
+Without Docker: <code>npm install</code>, <code>npm run dev:local</code>, <code>npm run demo:local</code>, then <code>http://localhost:8090</code>.</p>
+
+<h2>3. Design in brief</h2>
+<p><strong>One idea:</strong> each run is an append-only log in Postgres, and the live page is a reader of that log that remembers how far it got. The one-page version is <code>DESIGN.md</code>.</p>
+<h3>Event format</h3>
+<pre>POST /runs/{id}/metrics        Authorization: Bearer sk_…
+{ "events": [ { "key": "train/loss", "step": 120, "value": 0.31 } ] }
+→ 200 { "accepted": 1, "duplicates": 0, "conflicts": [], "last_seq": 4812 }</pre>
+<h3>Two orders, on purpose</h3>
+<table>
+  <tr><th style="width:12%">Order</th><th style="width:28%">Assigned by</th><th>Used for</th></tr>
+  <tr><td><code>step</code></td><td>the client</td><td>Where a point sits on the chart. Arrival order does not matter, so a late point lands in its place.</td></tr>
+  <tr><td><code>seq</code></td><td>the server, per run, at commit</td><td>Delivery: "what have I not sent this viewer yet".</td></tr>
+</table>
+<p><code>seq</code> is assigned inside the ingest transaction while holding a row lock on the run. Writers to one run are serialized, so the committed seqs of a run are always exactly 1..N: no holes, and no number that becomes visible after a higher one. That is what makes "send me everything after N" safe.</p>
+<h3>The same batch sent again</h3>
+<p>A point's identity is (run, key, step). One batch is one transaction. A point that is new is stored; one already stored with the same value is counted as a duplicate and changes nothing; one already stored with a different value keeps the first value and is reported and recorded as a conflict. A resend is therefore harmless and returns 200.</p>
+<h3>Catching up after a disconnect</h3>
+<p>The stream endpoint takes a cursor and runs one loop: read rows with seq greater than the cursor, write them, advance, wait. First load, live updates and reconnect are the same loop. The database notification only wakes the loop; it carries no data, and every stream also re-reads every 3 seconds, so a lost notification costs latency and never data. The server keeps no per-viewer queue, so there is nothing to overflow.</p>
+<h3>Project isolation</h3>
+<p>The project of a request comes from the API key and from nothing else. Every query on tenant data is filtered by that project. Another project's run and a non-existent run take the same path and return the same bytes. There is no server-side cache and no authentication cache. Routes can only be registered through three wrappers that state their authentication, and a test fails the build if one bypasses them.</p>
+
+<h2 class="pagebreak">4. Consistency: does the page match the database?</h2>
+<p>In the tests, yes.</p>
+<ul>
+  <li><strong>Browser test</strong> (<code>tests/ui.e2e.test.ts</code>, real Chromium): 6000 points sent through a client with lost requests, lost responses, requests aborted mid-flight, stale re-sends and about 5% late points. The server killed the page's live connection 23 times and the browser was offline for 1.5 seconds. At the end the page's data, the numbers on screen and a fingerprint of the point set equal a direct query on Postgres.</li>
+  <li><strong>API test</strong> (<code>tests/consistency.test.ts</code>): the same chaos, 72 forced disconnects, two consumers, one joining mid-run. Stored rows equal sent events exactly once, event numbers run 1..6000, both consumers equal the database.</li>
+</ul>
+<pre>sent: 6000 unique events, 378 HTTP requests; chaos: 28 lost requests, 29 lost responses, 29 aborted, 33 stale re-sends, 306 late
+db:   rows=6000 last_seq=6000 fingerprint=fb457e40
+page: rows=6000 last_seq=6000 fingerprint=fb457e40 gaps=0</pre>
+<div class="pair">
+  <figure><img src="../test-output/run-page-mobile.png" alt="Run page on a phone-sized screen" /><figcaption>Screenshot taken by the browser test at the end of a chaos run (phone-sized screen). "Fingerprint" is the value compared with the database.</figcaption></figure>
+  <figure><img src="../test-output/run-list-mobile.png" alt="Run list on a phone-sized screen" /><figcaption>Run list from the same test. The second run's name is hostile HTML and is shown as plain text.</figcaption></figure>
+</div>
+
+<h2>5. Isolation: does a project see only its own data?</h2>
+<p>Tested in <code>tests/isolation.test.ts</code> (19 tests) with two projects, A and B.</p>
+<table>
+  <tr><th style="width:24%">Attempt by A</th><th>Result</th></tr>
+  <tr><td>Read B's run, metrics or stream</td><td>404, byte-identical to the response for a run that does not exist. No way to tell that B's run exists.</td></tr>
+  <tr><td>Write into B's run</td><td>404; B's rows, event numbers and conflict table unchanged.</td></tr>
+  <tr><td>List runs</td><td>Only A's runs.</td></tr>
+  <tr><td>Subscribe to B's stream</td><td>A JSON 404, not a stream. While B ingests, A's open stream receives only A's points.</td></tr>
+  <tr><td>Guess IDs</td><td>IDs are random UUIDs. Ten malformed or tampered IDs all return the same 404 and never reach the database.</td></tr>
+  <tr><td>Use the wrong credentials</td><td>No key, a key in the URL, a missing "Bearer", the admin token as a project key: all 401.</td></tr>
+  <tr><td>Via cache</td><td>There is no server-side cache. Responses carry <code>Cache-Control: no-store</code>. This test would not be enough if a cache were added.</td></tr>
+</table>
+<h3>What else could leak</h3>
+<table>
+  <tr><th style="width:16%">Channel</th><th style="width:48%">State</th><th>How checked</th></tr>
+  <tr><td>Logs</td><td>No key, token or Authorization header in any log line across the isolation suite.</td><td>Assertion over captured logs.</td></tr>
+  <tr><td>Logs</td><td><span class="bad">Leak, left in on purpose:</span> an unexpected database error is logged with the driver's raw message. If that message ever held a connection string, it would be in the log.</td><td>Pinned by a test named "KNOWN LEAK".</td></tr>
+  <tr><td>Error messages</td><td>Fixed strings. Validation errors describe only the caller's own input. Server errors are generic.</td><td>Nine malformed requests and an injected failure.</td></tr>
+  <tr><td>Timing</td><td>Other-project 404 vs non-existent 404: medians 1.018 ms vs 1.016 ms over 300 samples each.</td><td>Measured, <strong>not asserted</strong>. An attacker averaging many requests is not ruled out.</td></tr>
+  <tr><td>Event numbers</td><td>Numbered per run, so they reveal nothing about other projects.</td><td>By design.</td></tr>
+  <tr><td>Load</td><td><span class="bad">Not isolated.</span> No per-project rate limit: one project can exhaust the shared database pool and slow everyone.</td><td>Seen in the 150-run load test.</td></tr>
+</table>
+
+<h2 class="pagebreak">6. Silent failures</h2>
+<table>
+  <tr><th style="width:18%">Failure</th><th style="width:30%">Why it should not happen</th><th>How it was checked, and the result</th></tr>
+  <tr><td>Events lost on reconnect</td><td>The client resumes from the last event it applied; the server replays from the log.</td><td>An offline client got exactly the missed points and none twice. A connection cut in the middle of a frame resumed after the last complete frame. With the notification connection killed, delivery still happened in 266 ms by polling, and a warning was logged.</td></tr>
+  <tr><td>Duplicates</td><td>Primary key (run, key, step).</td><td>The same batch 12 times, 8 of them at once: stored once. 20 concurrent writers: event numbers exactly 1..2000.</td></tr>
+  <tr><td>Same point, different value</td><td>First write wins; the conflict is returned and recorded.</td><td>Asserted on the response, the conflict table and the stored value.</td></tr>
+  <tr><td>Queue overflow for a slow client</td><td>There is no queue; the server stops reading the log until the socket drains.</td><td>A client that never reads, with 300000 points waiting: the server stopped at event 4500, buffered at most 54.5 KB, and cut the client off. The client then reconnected and received all 300000.</td></tr>
+  <tr><td>Partial writes</td><td>One batch is one transaction; the live event exists only after commit.</td><td>An invalid last event: 0 rows stored. An injected crash between INSERT and COMMIT: 0 rows, the viewer saw nothing, the retry stored all 50.</td></tr>
+  <tr><td>Old key after rotation</td><td>No grace period, no authentication cache; open streams are closed.</td><td>The old key returned 401 on six endpoints at once. Its open stream closed 8 ms after rotation, and after 292 ms when the notification was deliberately not sent.</td></tr>
+</table>
+<p><strong>How would I know in production that an event was lost?</strong> Per run, the last event number must equal the number of rows and the numbers must be contiguous. The page counts gaps itself, and the client checks every acknowledgement. <span class="bad">None of this is wired to an alert yet.</span> <code>/admin/stats</code> exposes pool waiters, event-loop delay and stalled-stream counts.</p>
+
+<h2>7. Verdict: SHIP for 50 runs at 10 events per second, on conditions</h2>
+<p>Server in its own process, 50 live viewers, clients sending every 200 ms. Raw output: <code>test-output/loadtest-*.txt</code>.</p>
+<table>
+  <tr><th>Load</th><th>Requests/s</th><th>Ingest p50 / p99</th><th>Send → viewer p99</th><th>Result</th></tr>
+  <tr><td>50 runs × 10 events/s (target)</td><td>250</td><td>16 / 118 ms</td><td>136 ms</td><td>0 failed; 50 of 50 viewers equal the database</td></tr>
+  <tr><td>50 × 40 events/s</td><td>250</td><td>14 / 104 ms</td><td>119 ms</td><td>same</td></tr>
+  <tr><td>50 × 10, sending every 100 ms</td><td>500</td><td>17 / 168 ms</td><td>217 ms</td><td>same</td></tr>
+  <tr><td>150 × 10 events/s</td><td>750</td><td>23 / <span class="bad">3339 ms</span></td><td><span class="bad">5333 ms</span></td><td>correct, but database pool exhausted (130 waiting)</td></tr>
+</table>
+<ul>
+  <li>Cost follows <strong>requests</strong>, not events: four times the events at the same request rate cost nothing.</li>
+  <li>The limit sits between 2× and 3× the target request rate. Past it the system got slow, not wrong.</li>
+  <li><strong>Conditions, because the evidence is thin:</strong> 20 to 30 second runs on a laptop, not a soak; not the Docker image; one app instance; server CPU 44–81% of one core across runs, which is noisy and not much headroom.</li>
+</ul>
+<div class="box green"><strong>What to change first:</strong> make the ingest one database round trip (it is eight today), and have clients send once a second. Then a per-project rate limit, alerts on the lost-event check, and a one-hour soak in the real environment.</div>
+
+<h2 class="pagebreak">8. What I checked by hand</h2>
+<p>Done in a browser against the app running locally, with the demo simulator feeding three runs. Full write-up: <code>test-output/manual-checks.md</code>.</p>
+
+<h3>Check 1: stop the server while a run page is open</h3>
+<p>The page changed to "Reconnecting…" and said it was showing data up to event 1520. The fingerprint is hidden because the page no longer claims to be complete.</p>
+<figure><img src="../test-output/manual-1-reconnecting.png" alt="Run page showing Reconnecting" /><figcaption>Server stopped. Note the straight segment in the middle of both charts: see the finding below.</figcaption></figure>
+
+<div class="box red">
+  <strong>Finding: a data loss the automated tests do not catch.</strong> Both charts have a straight segment around steps 550–730.
+  Each metric has 760 points but the last step is 934, so about 175 steps are missing. Cause: the demo client retries a batch for
+  under a second and then drops it, and the server had been down for longer. The demo terminal printed <code>send failed, will continue</code>
+  during the outage. The server and the page agree with each other (0 gaps) and both are missing the data. The page draws a straight
+  line over the hole, so nothing tells the user.
+</div>
+
+<p>After restarting the server, the same page returned to "Live" with the same 1520 points, 0 gaps, and the fingerprint back. Limit of this check: the demo had already stopped, so no new points were written while the page was disconnected. It shows reconnecting, not catching up; only the automated tests show catch-up.</p>
+<figure><img src="../test-output/manual-3-live-after-restart.png" alt="Run page Live again after restart" /><figcaption>Same run after the server came back: Live, 1520 points, 0 gaps, fingerprint shown.</figcaption></figure>
+
+<h3>Check 2: a run with no downtime has no hole</h3>
+<figure><img src="../test-output/manual-2-live-fresh-run.png" alt="Fresh run, Live, no missing steps" /><figcaption>A fresh run from a second demo: 310 points = 155 per metric for steps 0–154, so no step is missing. This supports the explanation of the hole.</figcaption></figure>
+
+<h3>Check 3: each project's list shows only its own runs</h3>
+<figure><img src="../test-output/manual-4-run-list-first-project.png" alt="Run list of the first project" /><figcaption>First project's key: its three demo runs and a run named "Test" that I created through the page. The second project's runs are not listed, although they are in the same database. With the second project's key, the list showed only its own three runs (no screenshot kept: it displayed an API key).</figcaption></figure>
+
+<h3>Check 4: one project cannot open another project's run by its URL</h3>
+<figure><img src="../test-output/manual-5-cross-project-not-found.png" alt="Not found for another project's run" /><figcaption>First project's key, address of the second project's run (the one that is Live in check 2): "Not found". Display bug seen here: "No metrics yet" is misleading for a run you cannot see. Fixed after this screenshot.</figcaption></figure>
+
+<h3>Check 5: key rotation</h3>
+<p>With one project open in two tabs, I rotated the key in one. The other tab, still holding the old key, was signed out by itself. The demo client, still writing with the old key, started printing <code>send failed</code> at the same moment.</p>
+<figure><img src="../test-output/manual-6-old-key-rejected.png" alt="Old key rejected after rotation" /><figcaption>The tab holding the old key after rotation. Display bug seen here: the header still shows "Demo", "Rotate key" and "Sign out" although the tab is signed out. Fixed after this screenshot.</figcaption></figure>
+
+<h2 class="pagebreak">9. AI tools: how I used them and where they were wrong</h2>
+<p>The code, the tests and the first drafts of the documents were written with Claude Code (Anthropic) from the task brief. Its first output was wrong in these places, and each was caught by evidence, not by reading the code:</p>
+<table>
+  <tr><th style="width:26%">Problem</th><th>What exposed it</th><th style="width:26%">Outcome</th></tr>
+  <tr><td>Stream leak: a write after the socket closed waited forever, so dropped streams were never released.</td><td>One odd number in a passing test: "killed 478 connections" for about 90 connects.</td><td>Fixed, and now asserted.</td></tr>
+  <tr><td>A load test that measured itself.</td><td>First result was ingest p50 = 1.7 s. The load generator shared the server's process.</td><td>Separated: 16 ms.</td></tr>
+  <tr><td>A test that could not fail correctly.</td><td>The "slow client" test timed out: the client was quietly reading the data instead of refusing it.</td><td>Test corrected.</td></tr>
+  <tr><td>Too little chaos in the browser test.</td><td>Output showed only 3 forced disconnects and a threshold that sometimes failed.</td><td>Lengthened to over 20.</td></tr>
+  <tr><td>Reconnect delay grew while data was still flowing.</td><td>Few reconnects in the browser test output.</td><td>Delay resets on any received data.</td></tr>
+  <tr><td>Two tests that only failed on Linux CI.</td><td>The first CI run: 2 of 42 failed, although all passed on Windows.</td><td>A read race and a too-small backlog; both tests changed.</td></tr>
+  <tr><td>Chart thinning could hide a spike.</td><td>A failing assertion on the number of drawn points.</td><td>Thinning keeps each bucket's min and max.</td></tr>
+</table>
+<p><strong>What I checked myself:</strong> the five manual checks in section 8, which found one real data loss and two display bugs that the 42 automated tests had missed.</p>
+
+<h2>10. What surprised me, what still concerns me</h2>
+<p>What surprised me was how fast the system is and how strict key rotation is. Points show up on the page almost as soon as they are sent. When I rotated the key in one tab, the other tab was signed out within seconds and the demo client started failing straight away. There is no grace period at all.</p>
+<p>What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away and the chart drew a straight line over the hole, so a user would never know points were missing. I found two display bugs just by looking, which 42 automated tests had not caught, so there are probably more. And I have only seen Docker work on CI, never on my own machine, and CI failed two tests that my laptop passed.</p>
+
+<h2>11. Known weak points and what the tests do not catch</h2>
+<h3>Weak points in the design</h3>
+<ul>
+  <li>The page loads a run's whole history; fine for thousands of points, not for millions.</li>
+  <li>Eight database round trips per batch, and each viewer does its own read per batch.</li>
+  <li>No per-project rate limit, so availability is not isolated between projects.</li>
+  <li>First write wins, so a client cannot correct a value it already sent.</li>
+  <li>The page does not show missing steps; it connects the points on either side with a line.</li>
+  <li>The API key is kept in the browser tab's session storage.</li>
+</ul>
+<h3>What the tests would not catch</h3>
+<ul>
+  <li>A wrong picture: data and numbers are compared, not pixels.</li>
+  <li>Events the client never sent. This happened for real in section 8.</li>
+  <li>A page that is wrong in the middle of a run and right at the end.</li>
+  <li>Other browsers, a backgrounded tab, a slow or lossy link, a proxy that buffers the stream.</li>
+  <li>A server crash or database restart mid-run, and more than one app instance.</li>
+  <li>Unlucky timing: each test runs one seeded schedule, which is a sample and not a proof.</li>
+</ul>
+
+</body>
+</html>
