@@ -61,30 +61,39 @@ it("UI: page state == database after out-of-order, duplicated, late metrics and 
 
   const head = await dbHead(t.db, runId);
   const stored = await dbPoints(t.db, runId);
-  await page.waitForFunction(
-    (lastSeq) =>
-      document.querySelector('[data-testid="status"]')?.getAttribute("data-status") === "live" &&
-      document.querySelector('[data-testid="last-seq"]')?.textContent === String(lastSeq),
+  // Read everything in ONE step inside the page, at a moment when the page
+  // itself says it is complete. Reading field by field raced with the last
+  // forced disconnect still being noticed by the browser (seen on CI: status
+  // was "live" for the wait, "reconnecting" by the time the fingerprint was read).
+  const snapshot = await page.waitForFunction(
+    (lastSeq) => {
+      const text = (id: string) => document.querySelector(`[data-testid="${id}"]`)?.textContent ?? "";
+      const live = document.querySelector('[data-testid="status"]')?.getAttribute("data-status") === "live";
+      if (!live || text("last-seq") !== String(lastSeq) || text("digest").length !== 8) return false;
+      return {
+        points: (window as any).__soup.points(), // 1. the page's model
+        count: text("count"), // 2. what is actually painted in the DOM
+        lastSeq: text("last-seq"),
+        digest: text("digest"),
+        gaps: text("gaps"),
+        cards: [...document.querySelectorAll("#charts article")].map((el) => ({
+          key: (el as HTMLElement).dataset.key,
+          value: el.querySelector(".value")?.textContent,
+          meta: el.querySelector(".meta")?.textContent,
+          ys: (el.querySelector("polyline")?.getAttribute("points") ?? "").split(" ").map((c) => Number(c.split(",")[1])),
+        })),
+      };
+    },
     head.lastSeq,
-    { timeout: 20000 },
+    { timeout: 30000 },
   );
-
-  // 1. the page's model, read out of the running page
-  const pagePoints = await page.evaluate(() => (window as any).__soup.points());
-  // 2. what is actually painted in the DOM
-  const dom = {
-    count: await page.textContent('[data-testid="count"]'),
-    lastSeq: await page.textContent('[data-testid="last-seq"]'),
-    digest: await page.textContent('[data-testid="digest"]'),
-    gaps: await page.textContent('[data-testid="gaps"]'),
-    cards: await page.$$eval("#charts article", (els) =>
-      els.map((el) => ({
-        key: (el as HTMLElement).dataset.key,
-        value: el.querySelector(".value")?.textContent,
-        meta: el.querySelector(".meta")?.textContent,
-        ys: (el.querySelector("polyline")?.getAttribute("points") ?? "").split(" ").map((c) => Number(c.split(",")[1])),
-      })),
-    ),
+  const { points: pagePoints, ...dom } = (await snapshot.jsonValue()) as {
+    points: unknown[];
+    count: string;
+    lastSeq: string;
+    digest: string;
+    gaps: string;
+    cards: { key?: string; value?: string | null; meta?: string | null; ys: number[] }[];
   };
 
   const streamLogs = t.logs.map((l) => JSON.parse(l)).filter((l) => l.msg === "stream closed" && l.run_id === runId);

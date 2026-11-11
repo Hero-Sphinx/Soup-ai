@@ -189,10 +189,18 @@ describe("queue overflow for a slow client", () => {
   it("a client that stops reading costs the server one page of memory, is cut off, and can resume without loss", async () => {
     const { key } = await t.project("slow");
     const runId = await t.run(key, "r");
-    const TOTAL = 60_000; // ~3.5 MB of SSE, far more than any socket buffer
-    for (let i = 0; i < TOTAL; i += 1000) {
-      expect((await post(key, runId, series("loss", 1000, i))).status).toBe(200);
-    }
+    // The backlog must be far bigger than the operating system's socket
+    // buffers, or a stuck client is never noticed: Linux lets a loopback
+    // connection hold about 10 MB (Windows far less), and the first version
+    // of this test (3.5 MB) failed on Linux CI for that reason. ~37 MB here,
+    // loaded with SQL because the ingest API is not what is being tested.
+    const TOTAL = 300_000;
+    await t.db.query(
+      `INSERT INTO metrics (run_id, key, step, value, seq)
+       SELECT $1, $2, g, g / 8.0, g FROM generate_series(1, $3::int) g`,
+      [runId, "loss_" + "x".repeat(55), TOTAL],
+    );
+    await t.db.query("UPDATE runs SET last_seq = $2 WHERE id = $1", [runId, TOTAL]);
     const before = { ...t.built.ctx.streams.stats };
 
     // a client that connects and then never reads a byte of the body
@@ -201,7 +209,7 @@ describe("queue overflow for a slow client", () => {
     // (without a 'response' listener Node would silently discard the body, i.e. read it)
     stuck.on("response", (res) => res.pause());
     await waitUntil(() => t.built.ctx.streams.size === 1, 3000, "stuck client connected");
-    await waitUntil(() => t.built.ctx.streams.stats.closedStalled === before.closedStalled + 1, 8000, "server cut off the stalled client");
+    await waitUntil(() => t.built.ctx.streams.stats.closedStalled === before.closedStalled + 1, 20000, "server cut off the stalled client");
     await waitUntil(() => t.built.ctx.streams.size === 0, 2000, "stalled stream removed");
     stuck.destroy();
 
@@ -217,7 +225,7 @@ describe("queue overflow for a slow client", () => {
 
     // the same client comes back healthy and gets everything
     const healthy = consume(t.base, key, runId);
-    await healthy.waitSynced(TOTAL, 30000);
+    await healthy.waitSynced(TOTAL, 90000);
     expect(healthy.state.count).toBe(TOTAL);
     expect(healthy.state.gaps).toBe(0);
     healthy.close();
