@@ -1,6 +1,8 @@
 # Evidence (long version of NOTE.md)
 
-**Read this first.** Docker is not installed on the machine this was built on. `docker compose up` and the two Dockerfiles are therefore **written but never run by me**. Everything below was measured by running the same code against a real local Postgres 17 (`npm run test:local`) on a Windows laptop. The CI workflow builds and smoke-tests the compose stack, but it has not run yet either. Treat the Docker path as unverified until you see it green.
+**Read this first: Docker.** The machine this was built on has no Docker, so I never ran `docker compose up` myself. It was checked on GitHub Actions instead: there the compose stack built, started and passed the smoke test. The numbers below come from the same code on a Windows laptop with a real local Postgres (`npm run test:local`).
+
+**The first CI run failed 2 of 42 tests,** both of which passed on my laptop. One was a race in the browser test: it read the page field by field while the last forced disconnect was still landing. The other, by my diagnosis from the symptoms, was the slow-client test: its backlog was smaller than Linux socket buffers, so the client never looked stuck. Both tests are changed; the latest run on the repository shows the current state.
 
 Raw output: [test-output/](test-output/). Counts and timings quoted below are from the saved run and vary a little from run to run. Design: [DESIGN.md](DESIGN.md).
 
@@ -8,8 +10,8 @@ Raw output: [test-output/](test-output/). Counts and timings quoted below are fr
 
 In the tests, yes: 42 of 42 pass, three consecutive runs.
 
-- **Browser test** (`tests/ui.e2e.test.ts`, real Chromium): 6000 points sent through a client with lost requests, lost responses, aborted requests, stale re-sends and ~5% late points. The server killed the page's live connection 27 times and the browser was offline for 1.5 s. At the end the page's model, the numbers in the DOM and a fingerprint of the point set equal a direct query on Postgres.
-- **API test** (`tests/consistency.test.ts`): same chaos, 68 forced disconnects, two consumers (one joining mid-run). Stored rows = sent events exactly once, seq = 1..6000, both consumers = database.
+- **Browser test** (`tests/ui.e2e.test.ts`, real Chromium): 6000 points sent through a client with lost requests, lost responses, aborted requests, stale re-sends and ~5% late points. The server killed the page's live connection 23 times and the browser was offline for 1.5 s. At the end the page's model, the numbers in the DOM and a fingerprint of the point set equal a direct query on Postgres.
+- **API test** (`tests/consistency.test.ts`): same chaos, 72 forced disconnects, two consumers (one joining mid-run). Stored rows = sent events exactly once, seq = 1..6000, both consumers = database.
 
 **What these tests would NOT catch**
 
@@ -34,7 +36,7 @@ Tested in `tests/isolation.test.ts` (19 tests): A cannot read, write, list, subs
 | Logs | No key, token or Authorization header in any log line across the whole isolation suite | assertion over captured logs |
 | Logs | **Leak, left in on purpose and pinned by a test:** an unexpected database error is logged with the driver's raw message. If that message ever held a connection string, it would be in our log | test named "KNOWN LEAK" |
 | Error messages | Fixed strings; validation errors describe only the caller's own input; 500s are generic | 9 malformed requests + injected failure |
-| Timing | Other-project 404 vs non-existent 404: medians 0.926 ms vs 0.915 ms over 300 samples each | printed, **not asserted**. Same single query on both paths, but a local measurement cannot rule out a difference an attacker could average out |
+| Timing | Other-project 404 vs non-existent 404: medians 1.018 ms vs 1.016 ms over 300 samples each | printed, **not asserted**. Same single query on both paths, but a local measurement cannot rule out a difference an attacker could average out |
 | IDs | seq is per run, so it reveals nothing about other projects. UUIDv4 | format check |
 | Load | **Not isolated.** No per-project rate limit: one project can exhaust the shared database pool and slow everyone | seen in the 150-run load test |
 
@@ -42,12 +44,12 @@ Tested in `tests/isolation.test.ts` (19 tests): A cannot read, write, list, subs
 
 | Failure | Why it should not happen | How I checked |
 |---|---|---|
-| Events lost on reconnect | Client resumes from the last seq it applied; server replays from the log | offline client gets exactly the missed points, 0 replays; connection cut mid-frame resumes after the last complete frame; LISTEN connection killed → delivery in 264 ms by polling, and a warning is logged |
+| Events lost on reconnect | Client resumes from the last seq it applied; server replays from the log | offline client gets exactly the missed points, 0 replays; connection cut mid-frame resumes after the last complete frame; LISTEN connection killed → delivery in 266 ms by polling, and a warning is logged |
 | Duplicates | Primary key `(run, key, step)` | same batch 12× (8 concurrent) → stored once; 20 concurrent writers → seq exactly 1..2000 |
 | Different value for the same point | First write wins, returned in `conflicts`, recorded | asserted on response, table and stored value |
-| Queue overflow, slow client | There is no queue; the server stops reading the log until the socket drains | a client that never reads: server stopped at seq 5500 of 60000, buffer peaked at 26.5 KB, cut off after the stall timeout; it then reconnected and got all 60000 |
+| Queue overflow, slow client | There is no queue; the server stops reading the log until the socket drains | a client that never reads: server stopped at seq 4500 of 300000, buffer peaked at 54.5 KB, cut off after the stall timeout; it then reconnected and got all 300000 |
 | Partial writes | One batch = one transaction; the live event only exists after commit | invalid last event → 0 rows; injected crash between INSERT and COMMIT → 0 rows, viewer saw nothing, retry stored all 50 |
-| Old key after rotation | No grace period, no auth cache; open streams are closed | old key → 401 on six endpoints at once; its open stream closed 8 ms after rotation, and after 303 ms when the notification was deliberately not sent |
+| Old key after rotation | No grace period, no auth cache; open streams are closed | old key → 401 on six endpoints at once; its open stream closed 8 ms after rotation, and after 292 ms when the notification was deliberately not sent |
 
 How would I know in production that an event was lost? Per run, `runs.last_seq` must equal `count(metrics)` and seqs must be contiguous; the page counts gaps itself; the client checks every ack. None of this is wired to an alert yet. `/admin/stats` exposes pool waiters, event-loop delay and stalled-stream counts.
 
@@ -89,4 +91,4 @@ The code, tests and first drafts of these documents were written with Claude Cod
 
 What surprised me was how fast the system is and how strict key rotation is. Points show up on the page almost as soon as they are sent. When I rotated the key in one tab, the other tab was signed out within seconds and the demo client started failing straight away. There is no grace period at all.
 
-What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away, and the chart drew a straight line over the hole, so a user would never know points were missing. I found two small display bugs just by looking at the pages, which the 42 automated tests had not caught, so there are probably more. And I have not seen this run in Docker yet.
+What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away, and the chart drew a straight line over the hole, so a user would never know points were missing. I found two small display bugs just by looking at the pages, which the 42 automated tests had not caught, so there are probably more. And I have only seen Docker work on CI, never on my own machine, and CI failed two tests that my laptop passed.

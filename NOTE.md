@@ -1,6 +1,8 @@
 # Note
 
-**Read this first.** Docker is not installed on the machine this was built on. `docker compose up` and the Dockerfiles are **written but never run by me**. Everything below was measured on the same code against a real local Postgres (`npm run test:local`) on a Windows laptop. The CI workflow builds and smoke-tests the compose stack; check its result on the repository before trusting the Docker path.
+**Read this first: Docker.** The machine this was built on has no Docker, so I never ran `docker compose up` myself. It was checked on GitHub Actions instead: there the compose stack built, started and passed the smoke test. The numbers below come from the same code on a Windows laptop with a real local Postgres (`npm run test:local`).
+
+**The first CI run failed 2 of 42 tests,** both of which passed on my laptop. One was a race in the browser test: it read the page field by field while the last forced disconnect was still landing. The other, by my diagnosis from the symptoms, was the slow-client test: its backlog was smaller than Linux socket buffers, so the client never looked stuck. Both tests are changed; the latest run on the repository shows the current state.
 
 Design: [DESIGN.md](DESIGN.md). Full tables and every number: [EVIDENCE.md](EVIDENCE.md). Raw output and screenshots: [test-output/](test-output/).
 
@@ -8,8 +10,8 @@ Design: [DESIGN.md](DESIGN.md). Full tables and every number: [EVIDENCE.md](EVID
 
 In the tests, yes: 42 of 42 pass.
 
-- **Browser test** (real Chromium): 6000 points sent through a client with lost requests, lost responses, aborted requests, re-sends and late points. The server killed the page's live connection 27 times and the browser was offline for 1.5 s. At the end the page's data, the numbers on screen and a fingerprint of the point set equal a direct query on Postgres.
-- **API test**: same chaos, 68 forced disconnects, two consumers. Stored rows = sent events exactly once.
+- **Browser test** (real Chromium): 6000 points sent through a client with lost requests, lost responses, aborted requests, re-sends and late points. The server killed the page's live connection 23 times and the browser was offline for 1.5 s. At the end the page's data, the numbers on screen and a fingerprint of the point set equal a direct query on Postgres.
+- **API test**: same chaos, 72 forced disconnects, two consumers. Stored rows = sent events exactly once.
 
 **What the tests would NOT catch**
 
@@ -30,7 +32,7 @@ What else could leak:
 
 - **Logs:** no key or token in any log line (asserted). **One leak left in on purpose and pinned by a test:** an unexpected database error is logged with the driver's raw message.
 - **Error messages:** fixed strings; 500s are generic (asserted).
-- **Timing:** other-project 404 vs non-existent 404, medians 0.926 vs 0.915 ms. Measured, **not asserted**; an attacker averaging many requests is not ruled out.
+- **Timing:** other-project 404 vs non-existent 404, medians 1.018 vs 1.016 ms. Measured, **not asserted**; an attacker averaging many requests is not ruled out.
 - **Load: not isolated.** No per-project rate limit, so one project can slow all the others.
 
 ## 3. Silent failures
@@ -39,7 +41,7 @@ What else could leak:
 |---|---|---|
 | Events lost on reconnect | offline client, connection cut mid-frame, notification channel killed | resumes from its last applied event; nothing lost, nothing sent twice |
 | Duplicates | same batch 12×, 8 of them at once | stored once |
-| Slow client queue overflow | a client that never reads, 60000 points waiting | no queue exists; server buffered 26.5 KB, cut the client off, it later got all 60000 |
+| Slow client queue overflow | a client that never reads, 300000 points waiting | no queue exists; server buffered 54.5 KB, cut the client off, it later got all 300000 |
 | Partial writes | injected crash between INSERT and COMMIT | 0 rows stored, viewer saw nothing, retry stored all |
 | Old key after rotation | old key on six endpoints plus an open stream | all 401 at once; stream closed in 8 ms |
 
@@ -66,6 +68,7 @@ The code, tests and first drafts of these documents were written with Claude Cod
 - **A leak:** dropped streams were never released. Exposed by one odd number in a passing test ("killed 478 connections" for about 90 connects).
 - **A load test that measured itself:** first result 1.7 s, because the load generator shared the server's process. Separated: 16 ms.
 - **A test that could not fail correctly:** the "slow client" was quietly reading the data.
+- **Two tests that failed only on Linux CI** although all 42 passed on Windows (see the top of this note).
 - Smaller: too little chaos in the browser test, a growing reconnect delay, chart thinning that could hide a spike.
 
 **What I verified by hand** (seven checks, screenshots in [test-output/manual-checks.md](test-output/manual-checks.md)):
@@ -79,4 +82,4 @@ The code, tests and first drafts of these documents were written with Claude Cod
 
 What surprised me was how fast the system is and how strict key rotation is. Points show up on the page almost as soon as they are sent. When I rotated the key in one tab, the other tab was signed out within seconds and the demo client started failing straight away. There is no grace period at all.
 
-What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away and the chart drew a straight line over the hole, so a user would never know points were missing. I found two display bugs just by looking, which 42 automated tests had not caught, so there are probably more. And I have not seen this run in Docker.
+What still concerns me comes from what I saw by hand. When the server was down, the demo client threw data away and the chart drew a straight line over the hole, so a user would never know points were missing. I found two display bugs just by looking, which 42 automated tests had not caught, so there are probably more. And I have only seen Docker work on CI, never on my own machine, and CI failed two tests that my laptop passed.
