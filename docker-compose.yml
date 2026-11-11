@@ -1,0 +1,71 @@
+# docker compose up                          -> app on http://localhost:8080 + demo data
+# docker compose run --rm tests              -> the whole test suite (incl. browser test)
+# docker compose run --rm loadtest           -> 50 runs x 10 events/s for 30 s
+#
+# ADMIN_TOKEN and the database password below are local development defaults.
+# Set real values through the environment anywhere that is not your laptop.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: soup
+      POSTGRES_PASSWORD: soup
+      POSTGRES_DB: soup
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U soup -d soup"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgres://soup:soup@db:5432/soup
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+      PORT: "8080"
+    ports:
+      - "${APP_PORT:-8080}:8080" # APP_PORT=8090 docker compose up, if 8080 is taken
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Creates a "Demo" project, prints its API key, and streams metrics into
+  # three runs over a deliberately unreliable client for 10 minutes.
+  demo:
+    build: .
+    command: ["npx", "tsx", "scripts/simulate.ts"]
+    environment:
+      BASE_URL: http://app:8080
+      PUBLIC_URL: http://localhost:${APP_PORT:-8080}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+    depends_on:
+      app:
+        condition: service_healthy
+
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: Dockerfile.tests
+    environment:
+      DATABASE_URL: postgres://soup:soup@db:5432/soup
+    depends_on:
+      db:
+        condition: service_healthy
+
+  loadtest:
+    profiles: ["test"]
+    build: .
+    command: ["npx", "tsx", "scripts/loadtest.ts"]
+    environment:
+      DATABASE_URL: postgres://soup:soup@db:5432/soup
+      ADMIN_TOKEN: loadtest-admin-token
+      PORT: "18080"
+    depends_on:
+      db:
+        condition: service_healthy

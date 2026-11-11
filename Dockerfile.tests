@@ -1,0 +1,8 @@
+# Test image: same code, plus Chromium for the browser end-to-end test.
+# Keep this tag equal to the "playwright" version in package-lock.json.
+FROM mcr.microsoft.com/playwright:v1.65.0-noble
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY . .
+CMD ["npx", "vitest", "run"]
